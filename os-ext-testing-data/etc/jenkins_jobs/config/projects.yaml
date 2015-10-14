@@ -1,0 +1,26 @@
+#- project:
+ #   name: cinder
+  #  github-org: openstack
+   # node: master
+    #vendor: DotHill 
+
+   # jobs:
+    #    - vedams-dothill-dsvm-tempest-full-iscsi:
+     #       node: 'devstack_slave || devstack-precise-check || VI'
+      #  - vedams-dothill-dsvm-tempest-full-fc:
+       #     node: 'devstack_slave || devstack-precise-check || VF'
+
+- project:
+    name: ci-sandbox
+    github-org: openstack-dev
+    node: master
+    vendor: DotHill
+
+    jobs:
+        #- noop-check-communication
+            #node: 'devstack_slave || devstack-precise-check || VF'
+            #node: 'devstack_slave || devstack-precise-check || VI'
+        - vedams-dothill-dsvm-tempest-full-iscsi:
+            node: 'devstack_slave || devstack-precise-check || VI'
+        - vedams-dothill-dsvm-tempest-full-fc:
+            node: 'devstack_slave || devstack-precise-check || VF'

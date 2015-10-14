@@ -1,0 +1,69 @@
+includes:
+#TODO: Rename this file. These functions are what enables single use nodes in nodepool.
+  - python-file: openstack_functions.py
+
+pipelines:
+  - name: check
+    description: Newly uploaded patchsets enter this pipeline to receive an initial +/-1 Verified vote from Jenkins.
+    failure-message: "Build failed.  For information on how to proceed, see https://wiki.openstack.org/wiki/GerritJenkinsGit#Test_Failures. For 3rd party ci contact info: https://wiki.openstack.org/wiki/ThirdPartySystems/"
+    manager: IndependentPipelineManager
+    #require:
+     # open: true
+      #current-patchset: true
+      #approval:
+       # - verified: [1]
+        #  username: jenkins
+    trigger:
+      gerrit:
+        - event: patchset-created
+          branch: master
+        #- event: change-restored
+         # branch: master 
+        #- event: comment-added
+         # branch: master
+          #username: jenkins
+       # - event: comment-added
+        #  branch: master
+         # comment: (?i)^(Patch Set [0-9]+:)?( [\w\\+-]*)*(\n\n)?\s*recheck(( (?:bug|lp)[\s#:]*(\d+))|( no bug))\s*$
+        #- event: comment-added
+         # branch: master
+          #comment: (?i)^(Patch Set [0-9]+:)?( [\w\\+-]*)*(\n\n)?\s*recheck(( (?:bug|lp)[\s#:]*(\d+))|( DotHill))\s*$
+    success:
+      gerrit:
+        verified: 1
+    failure:
+      gerrit:
+        verified: -1
+
+  - name: silent
+    description: Newly uploaded patchsets enter this pipeline to check jobs whose results are NOT to be posted (because e.g. they are not yet stable)
+    manager: IndependentPipelineManager
+    trigger:
+      gerrit:
+        - event: patchset-created
+        - event: change-restored
+        - event: comment-added
+          comment: (?i)^(Patch Set [0-9]+:)?( [\w\\+-]*)*(\n\n)?\s*recheck(( (?:bug|lp)[\s#:]*(\d+))|( no bug))\s*$
+
+  - name: patch
+    description: Newly uploaded patchsets enter this pipeline to check jobs whose results are not to be posted
+    manager: IndependentPipelineManager
+    trigger:
+      gerrit:
+        - event: comment-added
+          comment: (?i)^(Patch Set [0-9]+:)?( [\w\\+-]*)*(\n\n)?\s*check(( (?:bug|lp)[\s#:]*(\d+))|( patch))\s*$
+
+jobs:
+  - name: ^dsvm-tempest.*$
+    parameter-function: single_use_node
+
+projects:
+  - name: openstack-dev/ci-sandbox
+    check:
+      # Remove this after successfully verifying communication with upstream
+      # and seeing a posted successful review.
+      #- noop-check-communication
+      # Uncomment this job when you have a jenkins slave running and want to
+      # test a full Tempest run within devstack.
+      - vedams-dothill-dsvm-tempest-full-iscsi
+      - vedams-dothill-dsvm-tempest-full-fc

@@ -1,0 +1,107 @@
+- job-template:
+    name: 'vedams-dothill-dsvm-tempest-full-iscsi'
+    node: '{node}'
+
+    wrappers:
+      - timeout:
+          timeout: 300
+          fail: true
+      - timestamps
+
+    builders:
+      - link-logs
+      - net-info
+      - dns-lookup
+      - devstack-checkout
+      - clean-array-iscsi
+      - shell: |
+          #!/bin/bash -xe
+
+          function pre_test_hook {{
+              echo "Configure the local.conf file to properly setup dothill driver in cinder.conf"
+              cat <<EOF >$BASE/new/devstack/local.conf
+
+          [[post-config|\$CINDER_CONF]]
+          [DEFAULT]
+          enabled_backends=dothill
+          default_volume_type=dothill
+          Q_USE_SECGROUP=False
+          LIBVIRT_FIREWALL_DRIVER=nova.virt.firewall.NoopFirewallDriver
+          #CINDER_PERIODIC_INTERVAL=10
+          CINDER_SECURE_DELETE=False
+          API_RATE_LIMIT=False
+          [dothill]
+          # add you driver configuration here
+          volume_driver=cinder.volume.drivers.dothill.dothill_iscsi.DotHillISCSIDriver
+          volume_backend_name=dothill
+          san_ip = 10.135.192.105
+          san_login = manage
+          san_password = !manage
+          dothill_api_protocol='http'
+          dothill_iscsi_ips = 172.16.34.2
+          #dothill_use_chap=true
+          #dothill_chap_password=1234567891011
+          dothill_backend_type=linear
+          dothill_backend_name=dg01
+          #dothill_verify_certificate=False
+
+          # Use post-extra because the tempest configuration file is
+          # overwritten with the .sample after post-config.
+          [[post-extra|\$TEMPEST_CONFIG]]
+          [volume]
+          storage_protocol=iSCSI
+          vendor_name="DotHill"
+          EOF
+
+              echo "Configure localrc file to properly setup CINDER_ENABLED_BACKENDS"
+              cat <<EOF >>$BASE/new/devstack/localrc
+          CINDER_ENABLED_BACKENDS=dothill:dothill
+          EOF
+
+          #git clone https://github.com/tlakshman26/cinder-bug-fix-volume-conversion-full.git
+          #cp -r cinder-bug-fix-volume-conversion-full/* $BASE/new/cinder/
+          #cd $BASE/new/cinder
+          #cd $BASE/new/tempest
+          #git checkout 4df2e7d1fc7fdacdfde3bbcbe47e84d67021a2fd         
+          #git fetch https://review.openstack.org/openstack/cinder refs/changes/15/217615/5 && git cherry-pick FETCH_HEAD
+          #git clone https://github.com/nikesh-mahalka/new-dothil-copy
+          #cp new-dothil-copy/* cinder/volume/drivers/dothill/
+          #git fetch https://review.openstack.org/openstack/cinder refs/changes/80/215780/3 && git cherry-pick FETCH_HEAD
+          }}
+
+          export -f pre_test_hook
+
+          # To keep our CINDER_ENABLED_BACKENDS configuration in localrc
+          export KEEP_LOCALRC=1
+
+          export PYTHONUNBUFFERED=true
+          export DEVSTACK_GATE_TIMEOUT=300
+          export DEVSTACK_GATE_TEMPEST=1
+          export DEVSTACK_GATE_TEMPEST_REGEX='^(?=.*volume*)(?!tempest.thirdparty.boto.test_ec2_instance.*)(?!tempest.scenario.test_volume_boot_pattern.*)(?!tempest.scenario.test_minimum_basic.*)(?!tempest.scenario.test_shelve_instance.TestShelveInstance.test_shelve_volume_backed_instance)'
+          export TEMPEST_CONCURRENCY=1
+          export OVERRIDE_ENABLED_SERVICES=c-api,c-sch,c-vol,g-api,g-reg,key,mysql,n-api,n-cond,n-cpu,n-crt,n-net,n-obj,n-sch,rabbit,tempest
+          export DEVSTACK_GATE_FIXED_RANGE=10.1.0.0/24
+          export DEVSTACK_GATE_FLOATING_RANGE=172.16.33.152/29
+          export DEVSTACK_GATE_PUBLIC_NETWORK_GATEWAY=172.16.33.1
+          # Let's use the http protocol instead of git protocol
+          # export GIT_BASE="http://github.com"
+          export GIT_BASE="https://git.openstack.org"
+
+          if [ -z $ZUUL_PROJECT ]; then
+              export ZUUL_PROJECT=openstack/cinder
+          fi
+          if [ -z $ZUUL_BRANCH ]; then
+              export ZUUL_BRANCH=master
+          fi
+
+          cp devstack-gate/devstack-vm-gate-wrap.sh ./safe-devstack-vm-gate-wrap.sh
+          ./safe-devstack-vm-gate-wrap.sh
+          #git clone https://github.com/nikesh-mahalka/clean_array.git
+          #source clean_array/env_dothill_iscsi.sh
+          #python clean_array/clean_array.py
+
+ #     - clean-array-iscsi
+
+    publishers:
+      - devstack-logs
+      - console-log

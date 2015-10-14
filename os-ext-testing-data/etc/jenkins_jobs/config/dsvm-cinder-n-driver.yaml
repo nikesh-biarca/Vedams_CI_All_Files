@@ -1,0 +1,198 @@
+- job-template:
+    name: 'dsvm-tempest-full-n-fc'
+    node: '{node}'
+
+    wrappers:
+      - timeout:
+          timeout: 125
+          fail: true
+      - timestamps
+
+    builders:
+      - link-logs
+      - net-info
+      - devstack-checkout
+      - shell: |
+          #!/bin/bash -xe
+
+          function pre_test_hook {{
+              echo "Install thirdparty client libraries" 
+              #TODO: update your client here if needed, otherwise delete
+              sudo dpkg --configure -a
+              /opt/nodepool-scripts/install_fc_drivers.sh
+              export FC_PROVIDER="172.16.2.16"
+              export FC_PROVIDER_USER=vedams
+              export FC_PROVIDER_KEY=/opt/nodepool-scripts/jenkins_key
+              export FC_PROVIDER_RC=/home/vedams/keystonerc_jenkins
+              export FC_SINGLE_NODE=1
+              /opt/nodepool-scripts/invoke_fc_passthrough.sh
+              echo "Configure the local.conf file to properly setup dothill driver in cinder.conf"
+              cat <<EOF >$BASE/new/devstack/local.conf
+
+          [[post-config|\$CINDER_CONF]]
+          [DEFAULT]
+          enabled_backends=dothill
+          default_volume_type=dothill
+          ENABLED_SERVICES=c-api,c-sch,c-vol,cinder,dstat,g-api,g-reg,horizon,key,mysql,n-api,n-cond,n-cpu,n-crt,n-net,n-obj,n-sch,rabbit,tempest
+          # Disable security groups entirely
+          Q_USE_SECGROUP=False
+          LIBVIRT_FIREWALL_DRIVER=nova.virt.firewall.NoopFirewallDriver
+          #CINDER_PERIODIC_INTERVAL=10
+          CINDER_SECURE_DELETE=False
+          API_RATE_LIMIT=False
+          [dothill]
+          # add you driver configuration here
+          volume_driver=cinder.volume.drivers.dothill.dothill_fc.DotHillFCDriver
+          volume_backend_name=dothill
+          san_ip = 172.16.2.100
+          san_login = manage
+          san_password = !manage
+          #dothill_iscsi_ips = 172.16.20.10
+          #dothill_use_chap=true
+          #dothill_chap_password=1234567891011
+          dothill_backend_type=realstor
+          dothill_backend_name=dg02
+
+          # Use post-extra because the tempest configuration file is
+          # overwritten with the .sample after post-config.
+          [[post-extra|\$TEMPEST_CONFIG]]
+          [volume]
+          storage_protocol=FC
+          vendor_name="DotHill"
+          EOF
+
+              echo "Configure localrc file to properly setup CINDER_ENABLED_BACKENDS"
+              cat <<EOF >>$BASE/new/devstack/localrc
+          CINDER_ENABLED_BACKENDS=dothill:dothill
+          EOF
+    
+          cd $BASE/new/cinder
+          git fetch https://review.openstack.org/openstack/cinder refs/changes/67/189367/3 && git cherry-pick FETCH_HEAD 
+          #git fetch https://review.openstack.org/openstack/cinder refs/changes/65/177665/5 && git checkout FETCH_HEAD
+          }}
+
+          export -f pre_test_hook
+
+          # To keep our CINDER_ENABLED_BACKENDS configuration in localrc
+          export KEEP_LOCALRC=true
+
+          export PYTHONUNBUFFERED=true
+          export DEVSTACK_GATE_TIMEOUT=120
+          export DEVSTACK_GATE_TEMPEST=1
+          export DEVSTACK_GATE_TEMPEST_REGEX="^(?=.*volume*)(?!.*tempest.thirdparty.boto.test_ec2_instance.*)(?!.*tempest.scenario.test_volume_boot_pattern.*)(?!.*tempest.scenario.test_minimum_basic.*)"
+          export TEMPEST_CONCURRENCY=1
+
+          # Let's use the http protocol instead of git protocol
+          # export GIT_BASE="http://github.com"
+          export GIT_BASE="https://review.openstack.org/p"
+
+          if [ -z $ZUUL_PROJECT ]; then
+              export ZUUL_PROJECT=openstack-dev/ci-sandbox
+          fi
+          if [ -z $ZUUL_BRANCH ]; then
+              export ZUUL_BRANCH=master
+          fi
+
+          cp devstack-gate/devstack-vm-gate-wrap.sh ./safe-devstack-vm-gate-wrap.sh
+          ./safe-devstack-vm-gate-wrap.sh
+
+    publishers:
+      - devstack-logs
+      - console-log
+
+- job-template:
+    name: 'dsvm-tempest-full-n-iscsi'
+    node: '{node}'
+
+    wrappers:
+      - timeout:
+          timeout: 125
+          fail: true
+      - timestamps
+
+    builders:
+      - link-logs
+      - net-info
+      - devstack-checkout
+      - shell: |
+          #!/bin/bash -xe
+
+          function pre_test_hook {{
+              echo "Configure the local.conf file to properly setup dothill driver in cinder.conf"
+              cat <<EOF >$BASE/new/devstack/local.conf
+
+          [[post-config|\$CINDER_CONF]]
+          [DEFAULT]
+          enabled_backends=dothill
+          default_volume_type=dothill
+          #ENABLED_SERVICES=c-api,c-sch,c-vol,cinder,dstat,g-api,g-reg,horizon,key,mysql,n-api,n-cond,n-cpu,n-crt,n-net,n-obj,n-sch,rabbit,tempest
+          # Disable security groups entirely
+          Q_USE_SECGROUP=False
+          LIBVIRT_FIREWALL_DRIVER=nova.virt.firewall.NoopFirewallDriver
+          #CINDER_PERIODIC_INTERVAL=10
+          CINDER_SECURE_DELETE=False
+          API_RATE_LIMIT=False
+          [dothill]
+          # add you driver configuration here
+          volume_driver=cinder.volume.drivers.dothill.dothill_iscsi.DotHillISCSIDriver
+          volume_backend_name=dothill
+          san_ip = 172.16.2.100
+          san_login = manage
+          san_password = !manage
+          dothill_iscsi_ips = 172.16.20.10
+          #dothill_use_chap=true
+          #dothill_chap_password=1234567891011
+          dothill_backend_type=realstor
+          dothill_backend_name=dg01
+
+          # Use post-extra because the tempest configuration file is
+          # overwritten with the .sample after post-config.
+          [[post-extra|\$TEMPEST_CONFIG]]
+          [volume]
+          storage_protocol=iSCSI
+          vendor_name="DotHill"
+          EOF
+
+              echo "Configure localrc file to properly setup CINDER_ENABLED_BACKENDS"
+              cat <<EOF >>$BASE/new/devstack/localrc
+          CINDER_ENABLED_BACKENDS=dothill:dothill
+          FLOATING_RANGE=172.16.2.160/29
+          EOF
+
+          cd $BASE/new/cinder
+          git fetch https://review.openstack.org/openstack/cinder refs/changes/67/189367/3 && git cherry-pick FETCH_HEAD
+          #git fetch https://review.openstack.org/openstack/cinder refs/changes/65/177665/5 && git checkout FETCH_HEAD 
+                
+          #cd $BASE/new/cinder
+          #git fetch https://review.openstack.org/openstack/cinder refs/changes/65/177665/5 && git cherry-pick FETCH_HEAD 
+          #git fetch https://review.openstack.org/openstack/cinder refs/changes/65/177665/5 && git checkout FETCH_HEAD
+          }}
+
+          export -f pre_test_hook
+
+          # To keep our CINDER_ENABLED_BACKENDS configuration in localrc
+          #export KEEP_LOCALRC=true
+
+          export PYTHONUNBUFFERED=true
+          export DEVSTACK_GATE_TIMEOUT=120
+          export DEVSTACK_GATE_TEMPEST=1
+          export DEVSTACK_GATE_TEMPEST_REGEX='^(?=.*volume*)(?!tempest.thirdparty.boto.test_ec2_instance.*)(?!tempest.scenario.test_volume_boot_pattern.*)(?!tempest.scenario.test_minimum_basic.*)'
+          export TEMPEST_CONCURRENCY=1
+
+          # Let's use the http protocol instead of git protocol
+          # export GIT_BASE="http://github.com"
+          export GIT_BASE="https://review.openstack.org/p"
+
+          if [ -z $ZUUL_PROJECT ]; then
+              export ZUUL_PROJECT=openstack-dev/ci-sandbox
+          fi
+          if [ -z $ZUUL_BRANCH ]; then
+              export ZUUL_BRANCH=master
+          fi
+
+          cp devstack-gate/devstack-vm-gate-wrap.sh ./safe-devstack-vm-gate-wrap.sh
+          ./safe-devstack-vm-gate-wrap.sh
+
+    publishers:
+      - devstack-logs
+      - console-log

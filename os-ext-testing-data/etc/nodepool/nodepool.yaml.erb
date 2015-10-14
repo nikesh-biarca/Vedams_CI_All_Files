@@ -1,0 +1,80 @@
+script-dir: /etc/nodepool/scripts
+elements-dir: /etc/nodepool/elements
+images-dir: /opt/nodepool_dib
+
+dburi: 'mysql://nodepool:<%= mysql_password %>@localhost/nodepool'
+
+cron:
+  cleanup: '*/1 * * * *'
+  check: '*/15 * * * *'
+  image-update: '14 14 * * *'
+
+zmq-publishers:
+  - tcp://localhost:8888
+
+gearman-servers:
+  - host: <%= gearman_server %>
+
+labels:
+  - name: VF
+    image: dpc
+    min-ready: 1
+    providers:
+      - name: DF 
+
+  - name: VI
+    image: dpc
+    min-ready: 1
+    providers:
+      - name: DI
+
+diskimages:
+    - name: dpc
+      elements:
+        - ubuntu
+        - vm
+        - openstack-repos
+        - puppet
+        - nodepool-base
+        - node-devstack
+      release: trusty
+      env-vars:
+        TMPDIR: /opt/dib_tmp
+        DIB_IMAGE_CACHE: /opt/dib_cache
+      
+
+providers:
+  - name: DF
+    username: '<%= provider_username %>'
+    password: '<%= provider_password %>'
+    auth-url: 'http://172.16.33.34:5000/v2.0'
+    project-id: 'admin'
+    max-servers: 1
+    images:
+      - name: dpc
+        min-ram: 8192
+        diskimage: dpc
+        username: jenkins
+        private-key: '/home/nodepool/.ssh/id_rsa'
+
+
+  - name: DI
+    username: '<%= provider_username %>'
+    password: '<%= provider_password %>'
+    auth-url: 'http://172.16.33.34:5000/v2.0'
+    project-id: 'admin'
+    max-servers: 1
+    images:
+      - name: dpc
+        min-ram: 8192
+        diskimage: dpc
+        username: jenkins
+        private-key: '/home/nodepool/.ssh/id_rsa'
+
+targets:
+  - name: local-jenkins
+    jenkins:
+      url: 'http://localhost:8080/'
+      user: '<%= jenkins_api_user %>'
+      apikey: '<%= jenkins_api_key %>'
+      credentials-id: '<%= jenkins_credentials_id %>'

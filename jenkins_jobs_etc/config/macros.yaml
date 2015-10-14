@@ -1,0 +1,197 @@
+- builder:
+    name: devstack-checkout
+    builders:
+      - shell: |
+          #!/bin/bash -xe
+          if [[ ! -e devstack-gate ]]; then
+              git clone https://git.openstack.org/openstack-infra/devstack-gate
+          else
+              cd devstack-gate
+              git remote set-url origin https://git.openstack.org/openstack-infra/devstack-gate
+              git remote update
+              git reset --hard
+              if ! git clean -x -f ; then
+                  sleep 1
+                  git clean -x -f
+              fi
+              git checkout master
+              git reset --hard remotes/origin/master
+              if ! git clean -x -f ; then
+                  sleep 1
+                  git clean -x -f
+              fi
+              cd ..
+          fi
+
+- builder:
+    name: devstack-checkout-http
+    builders:
+      - shell: |
+          #!/bin/bash -xe
+          if [[ ! -e devstack-gate ]]; then
+              git clone http://git.openstack.org/openstack-infra/devstack-gate
+          else
+              cd devstack-gate
+              git remote set-url origin http://git.openstack.org/openstack-infra/devstack-gate
+              git remote update
+              git reset --hard
+              if ! git clean -x -f ; then
+                  sleep 1
+                  git clean -x -f
+              fi
+              git checkout master
+              git reset --hard remotes/origin/master
+              if ! git clean -x -f ; then
+                  sleep 1
+                  git clean -x -f
+              fi
+              cd ..
+          fi
+
+- builder:
+    name: python-install-from-zuul
+    builders:
+      - shell: |
+          #!/bin/bash -xe
+          # Install the client from the patch
+          git clone $ZUUL_URL/$ZUUL_PROJECT
+          cd $ZUUL_PROJECT
+          git fetch $ZUUL_URL/$ZUUL_PROJECT $ZUUL_REF
+          git checkout FETCH_HEAD
+          sudo python setup.py install
+
+#TODO: Make this configurable for alternative mirrors
+- builder:
+    name: gozer-pypi-setup
+    builders:
+      - shell: |
+          #!/bin/bash -xe
+          echo "Using pypi mirror  http://pypi.gozer.hpcloud.net/openstack/latest"
+          cat <<EOF > ~/.pydistutils.cfg
+          [easy_install]
+          index_url = http://pypi.gozer.hpcloud.net/latest
+          EOF
+
+          sudo mkdir -p ~/.pip/
+          cat <<EOF > ~/.pip/pip.conf
+          [global]
+          proxy = http://proxy.houston.hp.com:8080/
+          index-url = http://pypi.gozer.hpcloud.net/latest
+          extra-index-url = http://pypi.python.org/simple
+          timeout = 90
+
+          [install]
+          trusted-host=
+              pypi.gozer.hpcloud.net
+              pypi.python.org
+          EOF
+
+          # Make sure the top level pip configuration also has this file
+          sudo cp ~/.pip/pip.conf /etc/pip.conf
+
+- builder:
+    name: link-logs
+    builders:
+      - shell: |
+          #!/bin/sh
+          echo "Triggered by: https://review.openstack.org/$ZUUL_CHANGE patchset $ZUUL_PATCHSET"
+
+          echo "Detailed logs: http://tristero.cloudapp.net/$LOG_PATH/"
+
+- publisher:
+    name: coverage-log
+    publishers:
+      - scp:
+          site: 'LogServer'
+          files:
+            - target: 'logs/$LOG_PATH'
+              source: 'cover/**'
+              keep-hierarchy: true
+              copy-after-failure: true
+
+- publisher:
+    name: console-log
+    publishers:
+      - scp:
+          site: 'LogServer'
+          files:
+            - target: 'logs/$LOG_PATH'
+              copy-console: true
+              copy-after-failure: true
+
+- publisher:
+    name: devstack-logs
+    publishers:
+      - scp:
+          site: 'LogServer'
+          files:
+            - target: 'logs/$LOG_PATH'
+              source: 'logs/**'
+              keep-hierarchy: true
+              copy-after-failure: true
+
+- publisher:
+    name: devstack-logs-local
+    publishers:
+      - copy-to-master:
+            includes:
+              - 'logs/**'
+            destination: '/tmp/$BUILD_TAG'
+
+- builder:
+    name: net-info
+    builders:
+      - shell: |
+          #!/bin/sh
+          export PATH=$PATH:/sbin
+          echo "Network interface addresses..."
+          ip address show
+          echo "Network routing tables..."
+          ip route show
+          ip -6 route show
+          echo "Network neighbors..."
+          ip neighbor show
+
+- builder:
+    name: clean-array-fc
+    builders:
+      - shell: |
+          #!/bin/bash -xe
+          sudo apt-get install -y python-lxml
+          if [ ! -d "clean_array" ]; then
+            git clone https://github.com/nikesh-mahalka/clean_array.git
+          fi
+          source clean_array/env_dothill_fc.sh
+          python clean_array/clean_array.py
+
+- builder:
+    name: clean-array-iscsi
+    builders:
+      - shell: |
+          #!/bin/bash -xe
+          sudo apt-get install -y python-lxml
+          if [ ! -d "clean_array" ]; then
+            git clone https://github.com/nikesh-mahalka/clean_array.git
+          fi
+          source clean_array/env_dothill_iscsi.sh
+          python clean_array/clean_array.py
+
+- builder:
+    name: dns-lookup
+    builders:
+     - shell: |
+         #!/bin/bash -xe
+         echo "
+         resolvers() {
+             awk '\$1 == \"nameserver\" { print \$2 }' /etc/resolv.conf
+         }
+       
+         # given a nameserver IP address, exit successfully if it's responding, false otherwise
+         is_resolver_responding() {
+             dig +short google.com in ns @\$1 >/dev/null
+         }
+         for resolver in \$(resolvers); do
+             printf '%s is %s\n' "\$resolver" \$(is_resolver_responding \$resolver && echo OK || echo BAD)
+         done
+         " >> dns.sh
+         bash dns.sh 
