@@ -1,0 +1,5 @@
+user ubuntu
+PubKeyAuthentication yes
+IdentityFile ~/.ssh/id_rsa
+StrictHostKeyChecking no
+UserKnownHostsFile /dev/null
